@@ -1,0 +1,37 @@
+# roles/base_system/tasks/main.yml
+---
+- name: Update apt cache and upgrade packages (Debian/Ubuntu)
+  ansible.builtin.apt:
+    update_cache: yes
+    upgrade: dist
+    cache_valid_time: 3600
+  when: ansible_os_family == 'Debian'
+
+- name: Update all packages (CentOS/RHEL)
+  ansible.builtin.dnf:
+    name: '*'
+    state: latest
+  when: ansible_os_family == 'RedHat'
+
+- name: Install common packages (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name:
+      - curl
+      - git
+      - ufw
+      - python3-pip
+      - apt-transport-https
+      - ca-certificates
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Install common packages (CentOS/RHEL)
+  ansible.builtin.dnf:
+    name:
+      - curl
+      - git
+      - ufw
+      - python3-pip
+      - ca-certificates
+    state: present
+  when: ansible_os_family == 'RedHat'

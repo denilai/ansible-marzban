@@ -1,0 +1,22 @@
+# setup-vpn-server.yaml
+---
+- name: Configure XRay VPN Server with Marzban
+  hosts: vpn_servers
+  become: yes
+
+  pre_tasks:
+    - name: Check OS compatibility (Ubuntu >= 20.04)
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == 'Ubuntu'
+          - ansible_distribution_version is version('20.04', '>=')
+        fail_msg: "This playbook only supports Ubuntu 20.04 or newer. Detected {{ ansible_distribution }} {{ ansible_distribution_version }}."
+        success_msg: "OS check passed: {{ ansible_distribution }} {{ ansible_distribution_version }}."
+
+  roles:
+    - base_system
+    - security
+    - marzban
+    # - firewall
+    # - acme_ssl
+    # - verification

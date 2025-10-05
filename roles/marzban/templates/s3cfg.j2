@@ -1,0 +1,7 @@
+# roles/marzban/templates/s3cfg.j2
+[default]
+access_key = {{ s3_access_key }}
+secret_key = {{ s3_secret_key }}
+host_base = {{ s3_endpoint_url | replace('https://', '') | replace('http://', '') }}
+host_bucket = %(bucket)s.{{ s3_endpoint_url | replace('https://', '') | replace('http://', '') }}
+use_https = True

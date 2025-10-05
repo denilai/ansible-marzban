@@ -1,0 +1,109 @@
+# roles/marzban/tasks/main.yaml
+---
+# Блок 1: Установка зависимостей (Docker и s3cmd)
+- name: Install dependencies
+  ansible.builtin.apt:
+    name: ['ca-certificates', 'curl', 'gnupg', 'lsb-release', 'python3-pip', 's3cmd']
+    state: present
+
+- name: Add Docker's official GPG key
+  ansible.builtin.apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+
+- name: Set up Docker repository
+  ansible.builtin.apt_repository:
+    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_lsb.codename }} stable"
+    state: present
+    filename: docker
+
+- name: Install Docker Engine and Docker Compose
+  ansible.builtin.apt:
+    name: ['docker-ce', 'docker-ce-cli', 'containerd.io', 'docker-compose-plugin']
+    state: present
+    update_cache: yes
+
+- name: Ensure Docker service is started and enabled
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: yes
+
+# Блок 2: Установка Marzban CLI
+- name: Create directory for Marzban installation script
+  ansible.builtin.file:
+    path: "/opt/marzban"
+    state: directory
+    mode: '0755'
+
+- name: Download the Marzban installation script
+  ansible.builtin.get_url:
+    url: https://github.com/Gozargah/Marzban-scripts/raw/master/marzban.sh
+    dest: /opt/marzban/marzban.sh
+    mode: '0755'
+
+- name: Install Marzban using the downloaded script (non-interactive)
+  ansible.builtin.shell:
+    cmd: "yes | /opt/marzban/marzban.sh install"
+    creates: /usr/local/bin/marzban
+
+# Блок 3: Восстановление данных Marzban из S3 (условное выполнение)
+- name: Restore Marzban data from S3 backup
+  when: marzban_restore_from_s3 | bool
+  block:
+    - name: Ensure Marzban data directory exists for restore
+      ansible.builtin.file:
+        path: "/var/lib/marzban"
+        state: directory
+        mode: '0755'
+
+    - name: Create s3cmd config file from template
+      ansible.builtin.template:
+        src: s3cfg.j2
+        dest: /root/.s3cfg
+        owner: root
+        group: root
+        mode: '0600'
+      no_log: true # Очень важно! Не выводить содержимое файла с ключами в лог
+
+    - name: Restore Marzban config files (.env, docker-compose.yaml) from S3
+      ansible.builtin.command: "s3cmd get --force s3://{{ s3_bucket_name }}/{{ item }} /opt/marzban/{{ item }}"
+      loop:
+        - .env
+        - docker-compose.yaml
+      register: s3_config_get
+      changed_when: "'download:' in s3_config_get.stdout"
+
+    - name: Restore Marzban data (/var/lib/marzban) from S3
+      ansible.builtin.command: "s3cmd sync --delete-removed s3://{{ s3_bucket_name }}/var/lib/marzban/ /var/lib/marzban/"
+      register: s3_data_sync
+      changed_when: "'download:' in s3_data_sync.stdout or 'delete:' in s3_data_sync.stdout"
+
+    - name: Clean up s3cmd config file
+      ansible.builtin.file:
+        path: /root/.s3cfg
+        state: absent
+
+# Блок 4: Запуск и проверка состояния
+- name: Apply configuration and restart Marzban
+  ansible.builtin.command:
+    cmd: marzban restart -n
+  args:
+    chdir: /opt/marzban
+  register: marzban_restart_result
+  changed_when: "'Container' in marzban_restart_result.stdout or 'Recreating' in marzban_restart_result.stdout"
+
+- name: Wait for Marzban to become healthy (up to 1 minute)
+  ansible.builtin.command:
+    cmd: marzban status
+  args:
+    chdir: /opt/marzban
+  register: marzban_status
+  until: "'Up' in marzban_status.stdout"
+  retries: 6  # Количество попыток
+  delay: 10   # Пауза между попытками в секундах
+  changed_when: false # Эта задача не меняет состояние системы
+
+- name: Display final Marzban status
+  ansible.builtin.debug:
+    msg: "Marzban is running successfully! Final status: {{ marzban_status.stdout_lines }}"

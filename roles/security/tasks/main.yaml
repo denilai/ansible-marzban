@@ -1,0 +1,31 @@
+# roles/security/tasks/main.yaml
+---
+- name: Create the admin user '{{ marzban_admin_user }}'
+  ansible.builtin.user:
+    name: "{{ marzban_admin_user }}"
+    state: present
+    shell: /bin/bash
+    create_home: yes
+    groups: sudo
+    append: yes
+  tags:
+    - user
+
+- name: Allow '{{ marzban_admin_user }}' to use sudo without a password
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/90-marzban-admin-nopasswd"
+    content: "{{ marzban_admin_user }} ALL=(ALL) NOPASSWD: ALL"
+    mode: '0440'
+    owner: root
+    group: root
+    validate: /usr/sbin/visudo -cf %s
+  tags:
+    - user
+
+- name: Deploy SSH key for '{{ marzban_admin_user }}'
+  ansible.posix.authorized_key:
+    user: "{{ marzban_admin_user }}"
+    state: present
+    key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+  tags:
+    - user
